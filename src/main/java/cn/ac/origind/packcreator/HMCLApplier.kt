@@ -25,9 +25,16 @@ class CopyDirVisitor(private val fromPath: Path, private val toPath: Path, priva
     }
 }
 
-fun generateModpack(hmclName: String) {
-    val modpack = Paths.get("modpack.zip")
-    ZipUtil.pack(File("modpack"), modpack.toFile()) {
+fun generateModpack(hmclName: String, modpackDir: String = "modpack", overwrite: Boolean = false, output: String = "pack.zip") {
+    if (!Files.exists(Paths.get("hmcl.json")))
+        logger.warn("hmcl.json not exists")
+    if (!Files.exists(Paths.get("modpack.json")))
+        logger.warn("modpack.json not exists")
+    if (!Files.exists(Paths.get("pack.json")))
+        logger.warn("pack.json not exists")
+
+    val modpack = createTempFile().toPath()
+    ZipUtil.pack(File(modpackDir), modpack.toFile()) {
         "minecraft/$it"
     }
 
@@ -39,11 +46,20 @@ fun generateModpack(hmclName: String) {
         close()
     }
 
-    val pack = Paths.get("pack.zip")
-    Files.deleteIfExists(pack)
+    val pack = Paths.get(output)
+    if (Files.exists(pack)) {
+        if (overwrite) {
+            logger.warn("Force overwriting pack $pack")
+            Files.deleteIfExists(pack)
+        } else {
+            logger.warn("$pack pack exists")
+            return
+        }
+    }
     FileSystems.newFileSystem(URI.create("jar:${pack.toUri()}"), mapOf("create" to "true")).apply {
         Files.copy(Paths.get("hmcl.json"), getPath("hmcl.json"))
-        Files.copy(Paths.get(hmclName), getPath(hmclName))
+        Files.copy(Paths.get("$hmclName.jar"), getPath("$hmclName.jar"))
+        Files.copy(Paths.get("$hmclName.exe"), getPath("$hmclName.exe"))
         Files.copy(modpack, getPath("modpack.zip"))
         close()
     }

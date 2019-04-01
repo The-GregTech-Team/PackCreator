@@ -4,6 +4,7 @@ import com.cdancy.jenkins.rest.JenkinsClient
 import com.cdancy.jenkins.rest.domain.job.Artifact
 import com.github.kittinunf.fuel.httpDownload
 import joptsimple.OptionParser
+import org.apache.commons.io.FilenameUtils
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.io.File
@@ -15,18 +16,36 @@ const val UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KH
 val logger: Logger = LoggerFactory.getLogger("PackCreator")
 
 fun main(args: Array<String>) {
-    val parser = OptionParser()
+    val parser = OptionParser(false).apply {
+        acceptsAll(listOf("d", "directory"), "Modpack folder includes mods, config, etc.").withRequiredArg().defaultsTo("modpack")
+        acceptsAll(listOf("f", "force"), "Force overriding existing pack")
+        nonOptions().describedAs("Output file").ofType(String::class.java)
+    }
     val options = parser.parse(*args)
+    if (args.isEmpty() || options.nonOptionArguments().isEmpty()) {
+        println("""
+            Creates modpack in HMCL format.
+
+            Usage: <program> output.zip
+
+        """.trimIndent())
+        parser.printHelpOn(System.out)
+        return
+    }
+
+    logger.info("Creating modpack ${options.nonOptionArguments().first()}")
 
     logger.info("Fetching latest HMCL build...")
-    val artifact = getLatestArtifact()
-    logger.info("Latest Artifact: " + artifact.fileName())
-    if (Files.exists(Paths.get(artifact.fileName())))
-        logger.info("Skipping download of HMCL")
-    else
-        downloadArtifact(artifact)
+    val artifacts = getLatestArtifact()
+    logger.info("Latest Artifact: " + artifacts.first().fileName())
+    artifacts.forEach {
+        if (Files.exists(Paths.get(it.fileName())))
+            logger.info("Skipping download of ${it.fileName()}")
+        else
+            downloadArtifact(it)
+    }
 
-    generateModpack(artifact.fileName())
+    generateModpack(FilenameUtils.getBaseName(artifacts.first().fileName()), options.valueOf("d").toString(), options.has("f"), options.nonOptionArguments().first().toString())
 }
 
 fun downloadArtifact(artifact: Artifact) {
@@ -44,8 +63,8 @@ fun downloadArtifact(artifact: Artifact) {
             .join()
 }
 
-fun getLatestArtifact(): Artifact {
+fun getLatestArtifact(): List<Artifact> {
     val jenkinsClient = JenkinsClient.builder().endPoint(HMCL_CI).build()
     val latestBuild = jenkinsClient.api().jobsApi().lastBuildNumber(null, "HMCL")
-    return jenkinsClient.api().jobsApi().buildInfo(null, "HMCL", latestBuild).artifacts().first { it.fileName().endsWith(".jar") }
+    return jenkinsClient.api().jobsApi().buildInfo(null, "HMCL", latestBuild).artifacts().filter { it.fileName().endsWith(".jar") || it.fileName().endsWith(".exe") }
 }
